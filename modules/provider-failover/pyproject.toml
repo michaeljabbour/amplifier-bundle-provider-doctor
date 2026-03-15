@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "amplifier-module-provider-failover"
+version = "0.1.0"
+description = "Provider failover module for Amplifier — automatic tier-based failover across LLM providers"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[project.entry-points."amplifier.modules"]
+provider-failover = "provider_failover:mount"

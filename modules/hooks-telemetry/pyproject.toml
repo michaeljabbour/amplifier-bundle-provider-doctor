@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hooks-telemetry"
+version = "0.1.0"
+description = "Amplifier hook module — captures all provider errors via the hook system for aggregate telemetry"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[project.entry-points."amplifier.modules"]
+hooks-telemetry = "hooks_telemetry:mount"

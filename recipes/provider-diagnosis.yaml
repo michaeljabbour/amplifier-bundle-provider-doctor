@@ -1,0 +1,85 @@
+# Provider Diagnosis
+# Two-step recipe that tests all configured providers and reports health status
+# with actionable recommendations.
+#
+# Step 1 (test-providers) — tests each provider tier by sending a minimal request,
+# measures response time, and reports results as a table.
+#
+# Step 2 (recommend) — analyzes test results and provides specific action items
+# for any failing providers, assesses overall failover chain resilience.
+#
+# Usage:
+#   amplifier run "execute provider-doctor:recipes/provider-diagnosis.yaml"
+
+name: "provider-diagnosis"
+description: "Test all configured providers and report health status with recommendations"
+version: "1.0.0"
+author: "Provider Doctor Bundle"
+tags: ["provider", "health", "diagnosis", "failover", "resilience"]
+
+steps:
+  # ---------------------------------------------------------------------------
+  # Step 1: Test Providers
+  # Tests each provider tier with a minimal request and reports results.
+  # ---------------------------------------------------------------------------
+  - id: "test-providers"
+    agent: "provider-doctor:provider-health"
+    prompt: |
+      Test each provider tier in the failover chain by sending a minimal request
+      and measuring response time. Test the following tiers in order:
+
+      1. **Anthropic claude-opus-4-6** — Primary tier (highest capability)
+      2. **Anthropic claude-sonnet-4-5** — Secondary tier (balanced)
+      3. **OpenAI gpt-5.4** — Tertiary tier (fallback)
+
+      For each provider/model combination:
+      - Send a minimal request: "Respond with exactly: OK"
+      - Measure wall-clock response time from request to first token
+      - Check HTTP status code and catch any errors
+      - Classify errors (auth failure, quota exceeded, model unavailable, network error, timeout)
+
+      Report results as a table with columns: Provider | Model | Status | Latency | Details
+
+      Summary line: X/3 providers healthy.
+    output: "test-providers"
+    timeout: 120
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Recommend
+  # Analyzes test results and provides action items for failing providers.
+  # ---------------------------------------------------------------------------
+  - id: "recommend"
+    agent: "provider-doctor:provider-health"
+    prompt: |
+      Analyze the provider health test results below and provide recommendations.
+
+      TEST RESULTS:
+      {{test-providers}}
+
+      Provide the following analysis:
+
+      1. **Provider Health Summary** — Which providers are healthy and which are not.
+         List each provider with its status (healthy / degraded / failing).
+
+      2. **Failover Chain Assessment** — Whether the failover chain works end-to-end.
+         If the primary (claude-opus-4-6) is down, can the chain fall back to
+         claude-sonnet-4-5, then to gpt-5.4? Assess whether at least one provider
+         in the chain is available.
+
+      3. **Specific Action Items** — For each failing provider, provide concrete
+         action items based on the error type:
+         - **API keys**: Invalid or missing API key — check ANTHROPIC_API_KEY /
+           OPENAI_API_KEY environment variables, verify key validity in provider dashboard
+         - **Quotas**: Rate limit or quota exceeded — check usage limits, request quota
+           increase, or wait for reset window
+         - **Model availability**: Model not found or access denied — verify model name,
+           check if model access has been granted on the provider account
+         - **Network**: Connection timeout or DNS failure — verify network connectivity,
+           check firewall rules, confirm provider endpoint is reachable
+
+      4. **Overall Resilience Assessment** — Rate the overall resilience of the provider
+         configuration (high / medium / low) with a brief explanation. A configuration
+         with 2+ healthy providers in the chain is resilient; 1 healthy provider is
+         degraded; 0 healthy providers is a critical failure.
+    output: "recommend"
+    timeout: 120

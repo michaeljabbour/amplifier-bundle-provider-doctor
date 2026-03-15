@@ -1,0 +1,32 @@
+bundle:
+  name: provider-resilience
+  version: 0.1.0
+  description: |
+    Mounts the provider-failover module for automatic multi-tier provider
+    resilience. Routes requests through a priority-ordered chain of providers,
+    cascading to the next tier on failure or context-length exhaustion.
+    Provider-level retry is handled by each provider internally — this module
+    adds failover across different models/providers, not redundant retry.
+
+    Also mounts hooks-telemetry to capture ALL provider errors (not just
+    failover errors) for aggregate analysis via Supabase.
+
+providers:
+  - module: provider-failover
+    source: ./modules/provider-failover
+    config:
+      probe_interval: 5
+      tiers:
+        - provider: provider-anthropic
+          model: claude-opus-4-6
+          label: opus
+        - provider: provider-anthropic
+          model: claude-sonnet-4-5
+          label: sonnet
+        - provider: provider-openai
+          model: gpt-5.4
+          label: openai-codex
+
+hooks:
+  - module: hooks-telemetry
+    source: ./modules/hooks-telemetry

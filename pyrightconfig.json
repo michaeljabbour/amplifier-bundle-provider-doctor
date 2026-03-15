@@ -1,0 +1,8 @@
+{
+  "extraPaths": [
+    "modules/provider-failover",
+    "modules/hooks-harness"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic"
+}

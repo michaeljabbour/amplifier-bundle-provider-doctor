@@ -1,0 +1,118 @@
+# Session Repair
+# Two-step diagnose and conditional repair recipe for broken Amplifier sessions.
+#
+# Step 1 (diagnose) always runs — analyzes the session transcript for all known
+# pathologies and reports with severity. Sets needs_repair=true when CRITICAL or
+# WARNING issues are found.
+#
+# Step 2 (repair) runs only when diagnose.needs_repair is true — applies the
+# minimum-invasive repairs: backup, inject synthetic tool results, verify.
+#
+# Usage:
+#   amplifier run "execute provider-doctor:recipes/session-repair.yaml
+#     with session_id=<session-id>"
+
+name: "session-repair"
+description: "Diagnose and optionally repair a broken Amplifier session"
+version: "1.0.0"
+author: "Provider Doctor Bundle"
+tags: ["session", "repair", "diagnose", "orphaned-tool-calls", "ordering-violations"]
+
+context:
+  session_id: ""  # Required: the session ID to diagnose and repair
+
+steps:
+  # ---------------------------------------------------------------------------
+  # Step 1: Diagnose
+  # Always runs. Analyzes the session for all known transcript pathologies.
+  # Reports findings with severity and sets needs_repair=true when CRITICAL or
+  # WARNING issues are found.
+  # ---------------------------------------------------------------------------
+  - id: "diagnose"
+    agent: "provider-doctor:session-doctor"
+    prompt: |
+      Analyze session {{session_id}} for transcript issues.
+
+      Locate the session at ~/.amplifier/sessions/{{session_id}}/ and examine
+      both metadata.json and events.jsonl thoroughly.
+
+      Check for all of the following issue types:
+
+      1. **Orphaned tool calls** — tool_use events with no matching tool_result
+         in the subsequent user turn. These cause provider rejection on resume.
+
+      2. **Ordering violations** — consecutive messages from the same role
+         (two assistant turns in a row, or two user turns in a row).
+
+      3. **Oversized transcripts** — total character count exceeds 500K chars.
+         Flag as oversized if the transcript is too large for normal inference.
+
+      4. **Truncated or malformed events** — event lines that are not valid JSON,
+         or final events missing required fields (no stop_reason, no input, etc.).
+
+      5. **Duplicate entries** — identical event IDs or identical content
+         appearing more than once in the transcript.
+
+      Report all findings with severity ratings:
+        - CRITICAL: session cannot resume without repair
+        - WARNING: session may fail or produce incorrect output
+        - MEDIUM: session is degraded; repair recommended
+        - LOW: minor anomaly; monitor only
+
+      At the end of your report, set needs_repair=true if any CRITICAL or
+      WARNING severity issues were found. Set needs_repair=false if the session
+      is healthy or has only MEDIUM/LOW issues.
+
+      Return your report followed by exactly one line in this format:
+        NEEDS_REPAIR: true
+      or
+        NEEDS_REPAIR: false
+    output: "diagnose"
+    parse_output:
+      needs_repair: "NEEDS_REPAIR: (true|false)"
+    timeout: 300
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Repair
+  # Only runs when diagnose.needs_repair is true.
+  # Applies conservative repairs: backup first, inject synthetic tool results
+  # to close orphaned calls, verify the transcript is clean after repair.
+  # ---------------------------------------------------------------------------
+  - id: "repair"
+    condition: "{{diagnose.needs_repair}}"
+    agent: "provider-doctor:session-doctor"
+    prompt: |
+      Apply repairs to session {{session_id}} based on the diagnosis below.
+
+      DIAGNOSIS:
+      {{diagnose}}
+
+      Repair steps (in order):
+
+      1. **Backup** — create a timestamped backup before any modification:
+           events.jsonl.bak.<timestamp>
+         Never modify the original without this backup in place.
+
+      2. **Inject synthetic tool results** — for each orphaned tool call found
+         in the diagnosis, inject a synthetic tool_result entry immediately
+         after the assistant turn that contains the orphaned tool_use.
+         Use is_error=true and a message indicating the call was interrupted.
+
+      3. **Fix ordering violations** — if any consecutive same-role messages
+         were found, inject minimal bridging messages to satisfy the
+         alternating-role requirement.
+
+      4. **Verify repair** — re-run the full diagnosis on the modified
+         events.jsonl and confirm all CRITICAL and WARNING issues are resolved.
+         Confirm the final event leaves the transcript in a resumable state.
+
+      5. **Report changes** — summarize every modification made:
+         - Which tool_use IDs received synthetic results
+         - Which ordering violations were bridged
+         - Verification outcome (PASS or FAIL with details)
+         - Whether the session is now resumable
+
+      Prefer REPAIR (inject synthetic entries) over REWIND (truncate history).
+      Only perform REWIND if explicitly requested and repair is not possible.
+    output: "repair"
+    timeout: 600
